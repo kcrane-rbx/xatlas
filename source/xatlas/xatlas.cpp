@@ -6581,6 +6581,28 @@ struct PiecewiseParam
 	ConstArrayView<uint32_t> chartFaces() const { return m_patch; }
 	ConstArrayView<Vector2> texcoords() const { return m_texcoords; }
 
+	void fixWinding()
+	{
+		if (m_patch.isEmpty())
+			return;
+		// Check the signed area of the first face in the patch.
+		const uint32_t face = m_patch[0];
+		const Vector2 &v1 = m_texcoords[m_mesh->vertexAt(face * 3 + 0)];
+		const Vector2 &v2 = m_texcoords[m_mesh->vertexAt(face * 3 + 1)];
+		const Vector2 &v3 = m_texcoords[m_mesh->vertexAt(face * 3 + 2)];
+		const float signedArea = ((v2.x - v1.x) * (v3.y - v1.y) - (v3.x - v1.x) * (v2.y - v1.y)) * 0.5f;
+		if (signedArea < 0.0f) {
+			// Flip all U coordinates for vertices in this patch.
+			for (uint32_t f = 0; f < m_patch.size(); f++) {
+				const uint32_t patchFace = m_patch[f];
+				for (uint32_t i = 0; i < 3; i++) {
+					const uint32_t vertex = m_mesh->vertexAt(patchFace * 3 + i);
+					m_texcoords[vertex].x *= -1.0f;
+				}
+			}
+		}
+	}
+
 	bool computeChart()
 	{
 		// Clear per-patch state.
@@ -7455,6 +7477,9 @@ static void runCreateAndParameterizeChartTask(void *groupUserData, void *taskUse
 		XA_PROFILE_END(parameterizeChartsPiecewise)
 		if (!facesRemaining)
 			break;
+		// Fix winding for piecewise charts (same as Chart::parameterize does for regular charts).
+		if (groupArgs->options->fixWinding)
+			pp.fixWinding();
 		Chart *chart = XA_NEW_ARGS(MemTag::Default, Chart, groupArgs->chartBuffers->get(), invalidChart, invalidMesh, pp.chartFaces(), pp.texcoords(), args->mesh);
 #if XA_CHECK_PIECEWISE_CHART_QUALITY
 		chart->evaluateQuality(args->boundaryGrid->get());
@@ -8454,6 +8479,7 @@ struct Atlas
 				DrawTriangleCallbackArgs args;
 				args.chartBitImage = &chartImage;
 				args.chartBitImageRotated = options.rotateCharts ? &chartImageRotated : nullptr;
+				args.chartWidth = (int)chartImage.width();
 				raster::drawTriangle(Vector2((float)chartImage.width(), (float)chartImage.height()), vertices, drawTriangleCallback, &args);
 			}
 			// Expand chart by pixels sampled by bilinear interpolation.
@@ -8589,7 +8615,14 @@ struct Atlas
 				Vector2 t = texcoord;
 				if (best_r) {
 					XA_DEBUG_ASSERT(options.rotateCharts);
-					swap(t.x, t.y);
+					// 90° clockwise rotation: (x, y) -> (y, width - x)
+					// This preserves orientation, unlike swap(x, y) which reflects.
+					// Must use the same width as the bitmap rotation (chartImage.width() - 1)
+					// to ensure UV placement matches collision detection.
+					const float rotationWidth = (float)(chartImage.width() - 1);
+					const float temp = t.x;
+					t.x = t.y;
+					t.y = rotationWidth - temp;
 				}
 				texcoord.x = best_x + t.x;
 				texcoord.y = best_y + t.y;
@@ -8842,14 +8875,18 @@ private:
 	struct DrawTriangleCallbackArgs
 	{
 		BitImage *chartBitImage, *chartBitImageRotated;
+		int chartWidth; // Width of chartBitImage, needed for 90° rotation
 	};
 
 	static bool drawTriangleCallback(void *param, int x, int y)
 	{
 		auto args = (DrawTriangleCallbackArgs *)param;
 		args->chartBitImage->set(x, y);
-		if (args->chartBitImageRotated)
-			args->chartBitImageRotated->set(y, x);
+		if (args->chartBitImageRotated) {
+			// 90° clockwise rotation: (x, y) -> (y, width - 1 - x)
+			// This preserves orientation, unlike swap(x, y) which reflects.
+			args->chartBitImageRotated->set(y, args->chartWidth - 1 - x);
+		}
 		return true;
 	}
 
