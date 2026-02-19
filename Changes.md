@@ -1,4 +1,4 @@
-# xatlas Bug Fixes: Chart Orientation
+# xatlas Bug Fixes: UV Chart Orientation
 
 This document describes two related bugs in xatlas that cause UV charts to be incorrectly flipped/mirrored, along with their fixes.
 
