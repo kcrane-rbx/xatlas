@@ -8863,14 +8863,17 @@ private:
 							goto setPixel;
 					}
 				}
-				continue;
-			setPixel:
-				dest->set(x, y);
-				if (destRotated)
-					destRotated->set(y, x);
+			continue;
+		setPixel:
+			dest->set(x, y);
+			if (destRotated) {
+				// 90° clockwise rotation: (x, y) -> (y, width - 1 - x)
+				// Must match the rotation used in drawTriangleCallback.
+				destRotated->set(y, (int)source->width() - 1 - (int)x);
 			}
 		}
 	}
+}
 
 	struct DrawTriangleCallbackArgs
 	{

@@ -53,6 +53,8 @@ t.y = rotationWidth - temp;
 
 ### Fix Details
 
+**All three places that create rotated bitmaps or coordinates must use the same rotation formula.**
+
 1. Add `chartWidth` to `DrawTriangleCallbackArgs`:
    ```cpp
    struct DrawTriangleCallbackArgs
@@ -75,7 +77,16 @@ t.y = rotationWidth - temp;
    args.chartWidth = (int)chartImage.width();
    ```
 
-4. Update the texcoord transform to match (using same width reference as bitmap):
+4. Update `bilinearExpand` to use the same rotation (was using swap):
+   ```cpp
+   if (destRotated) {
+       // 90° clockwise rotation: (x, y) -> (y, width - 1 - x)
+       // Must match the rotation used in drawTriangleCallback.
+       destRotated->set(y, (int)source->width() - 1 - (int)x);
+   }
+   ```
+
+5. Update the texcoord transform to match (using same width reference as bitmap):
    ```cpp
    if (best_r) {
        // 90° clockwise rotation: (x, y) -> (y, width - x)
@@ -178,6 +189,7 @@ After the fix:
 - `source/xatlas/xatlas.cpp`
   - `struct DrawTriangleCallbackArgs` — added `chartWidth` field
   - `drawTriangleCallback()` — fixed rotation transform for rasterization
+  - `bilinearExpand()` — fixed rotation transform for bilinear expansion
   - `packCharts()` — fixed rotation transform for texture coordinates, set `chartWidth`
   - `struct PiecewiseParam` — added `fixWinding()` method
   - `runCreateAndParameterizeChartTask()` — call `pp.fixWinding()` for piecewise charts
